@@ -1,0 +1,14 @@
+# 忽略 Python 编译文件
+*.pyc
+__pycache__/
+
+# 忽略数据集文件（例如 MNIST 数据）
+codes/dataset/MNIST/*.gz
+
+# 忽略项目的 PDF 文件
+project_1.pdf
+
+# 忽略临时文件
+*.log
+*.bak
+*.swp
