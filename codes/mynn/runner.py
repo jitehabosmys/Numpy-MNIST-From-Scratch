@@ -25,8 +25,9 @@ class RunnerM():
 
         num_epochs = kwargs.get("num_epochs", 0)
         log_iters = kwargs.get("log_iters", 100)
-        save_dir = kwargs.get("save_dir", "best_model")
+        save_dir = kwargs.get("save_dir", ".\codes\saved_models")
         save_filename = kwargs.get("save_filename", "best_model.pickle")
+        transform_dict = kwargs.get("transform_dcit", {'rotation': False, 'flip': False,'shift': False})
 
         if not os.path.exists(save_dir):
             os.mkdir(save_dir)
@@ -46,6 +47,18 @@ class RunnerM():
             for iteration in range(int(X.shape[0] / self.batch_size) + 1):
                 train_X = X[iteration * self.batch_size : (iteration+1) * self.batch_size]
                 train_y = y[iteration * self.batch_size : (iteration+1) * self.batch_size]
+                
+                # 随机数据增强
+                train_X = np.array([
+                    transform(
+                        x, 
+                        rotation=transform_dict.get('rotation', False), 
+                        flip=transform_dict.get('flip', False), 
+                        shift=transform_dict.get('shift', False), 
+                        angle=10
+                    ) 
+                    for x in train_X
+                ])
 
                 # 记录前向传播的时间
                 start_time = time.time()
@@ -67,7 +80,6 @@ class RunnerM():
                 self.optimizer.step()
 
          
-
                 if self.scheduler is not None:
                     self.scheduler.step()
                 
@@ -103,3 +115,25 @@ class RunnerM():
     
     def save_model(self, save_path):
         self.model.save_model(save_path)
+
+from scipy.ndimage import rotate
+def transform(img, rotation=False, flip=False, shift=False, angle=10):
+
+    assert img.shape == (28*28,)    
+
+    img = img.reshape(28, 28)
+
+    if rotation:
+        img = rotate(img, angle, reshape=False, mode='constant', cval=0)
+
+    if flip:
+        img = np.fliplr(img) if np.random.rand() > 0.5 else img
+
+    if shift:
+        dx = np.random.randint(-2, 2)
+        dy = np.random.randint(-2, 2)
+        img = np.roll(img, (dy, dx), axis=(0, 1))
+
+    img = img.reshape(28*28)
+
+    return img

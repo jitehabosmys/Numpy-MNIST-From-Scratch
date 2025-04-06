@@ -5,10 +5,10 @@ import gzip
 import matplotlib.pyplot as plt
 import pickle
 
-#model = nn.models.Model_MLP()
-# model.load_model(r'.\saved_models\best_model_1.pickle')
-model = nn.models.Model_CNN()
-model.load_model(r'.\codes\saved_models\best_model_3.pickle')
+model = nn.models.Model_MLP()
+model.load_model(r'.\codes\saved_models\best_model_23.pickle')
+# model = nn.models.Model_CNN()
+# model.load_model(r'.\codes\saved_models\best_model_3.pickle')
 
 test_images_path = r'.\codes.\dataset\MNIST\t10k-images-idx3-ubyte.gz'
 test_labels_path = r'.\codes.\dataset\MNIST\t10k-labels-idx1-ubyte.gz'

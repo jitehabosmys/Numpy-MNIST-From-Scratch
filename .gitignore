@@ -12,3 +12,13 @@ project_1.pdf
 *.log
 *.bak
 *.swp
+
+# 忽略编译目录
+build/
+
+# 忽略所有 .pickle 文件
+*.pickle
+
+# 忽略所有 .png 图像文件
+*.png
+

@@ -1,5 +1,6 @@
 from abc import abstractmethod, ABC
 import numpy as np
+np.random.seed(309)
 
 class Layer(ABC):
     def __init__(self) -> None:
@@ -22,12 +23,18 @@ class Linear(Layer):
         super().__init__()
 
         self.params = {}
-        self.params['W'] = initialize_method(size=(in_dim, out_dim))
-        self.params['b'] = initialize_method(size=(1, out_dim))
+        if initialize_method == 'Xavier':
+            fan_in = in_dim
+            fan_out = out_dim
+            scale = np.sqrt(2.0 / (fan_in + fan_out))  # ReLU的修正因子
+            self.params['W'] = np.random.normal(scale=scale, size=(in_dim, out_dim))
+            self.params['b'] = np.random.normal(size=(1, out_dim))
+        else:    
+            self.params['W'] = initialize_method(size=(in_dim, out_dim))
+            self.params['b'] = initialize_method(size=(1, out_dim))
+
         self.grads = {'W' : None, 'b' : None}
         self.input = None # Record the input for backward process.
-
-        # self.params = {'W' : self.W, 'b' : self.b}
 
         self.weight_decay = weight_decay # whether using weight decay
         self.weight_decay_lambda = weight_decay_lambda # control the intensity of weight decay
@@ -417,6 +424,22 @@ class MaxPool2D(Layer):
 def clear_grad(self):
     pass
 
+
+# class BatchNorm1D(Layer):
+#     """
+#     A batch normalization layer.
+#     """
+#     def __init__(self, input_dim, initialize_method=np.random.normal, weight_decay=False, weight_decay_lambda=1e-8) -> None:
+#         super().__init__()
+#         self.input_dim = input_dim
+#         self.initialize_method = initialize_method
+#         self.weight_decay = weight_decay
+#         self.weight_decay_lambda = weight_decay_lambda
+#         self.params = {}
+#         self.params['gamma'] = np.ones(input_dim)
+#         self.params['beta'] = np.zeros(input_dim)
+#         self.params['running_mean'] = np.zeros(input_dim)
+#         self.grads = {}
 
 
 # 测试代码

@@ -1,6 +1,7 @@
 from .op import *
 import pickle
 
+
 class Model_MLP(Layer):
     """
     A model with linear layers. We provied you with this example about a structure of a model.
@@ -38,8 +39,8 @@ class Model_MLP(Layer):
         grads = loss_grad
         for i, layer in enumerate(reversed(self.layers)):
             grads = layer.backward(grads)
-        if hasattr(layer, 'grads'):
-            print(f"Layer {i} ({layer.__class__.__name__}) grad norm: {np.linalg.norm(grads)}")
+        # if hasattr(layer, 'grads'):
+        #     print(f"Layer {i} ({layer.__class__.__name__}) grad norm: {np.linalg.norm(grads)}")
         return grads
 
     def load_model(self, param_list):
