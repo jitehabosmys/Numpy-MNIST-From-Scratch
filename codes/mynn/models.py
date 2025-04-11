@@ -9,7 +9,7 @@ class Model_MLP(Layer):
     def __init__(self, size_list=None, act_func=None, lambda_list=None, training=True):
         self.act_func = act_func
         self.training = training
-        self.act_func = act_func
+        self.size_list = size_list
 
         if size_list is not None and act_func is not None:
             self.layers = []
