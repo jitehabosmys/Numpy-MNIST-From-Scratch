@@ -59,7 +59,9 @@ class RunnerM():
                     ) 
                     for x in train_X
                 ])
-
+                
+                # 训练模式
+                self.model.train()
                 # 记录前向传播的时间
                 start_time = time.time()
                 logits = self.model(train_X)
@@ -86,6 +88,8 @@ class RunnerM():
                 
                 # 只有在 log_iters 倍数的 iteration 才进行评估
                 if (iteration) % log_iters == 0:
+                    # 评估模式
+                    self.model.eval()
                     start_time = time.time()
                     dev_score, dev_loss = self.evaluate(dev_set)
                     end_time = time.time()

@@ -6,8 +6,9 @@ class Model_MLP(Layer):
     """
     A model with linear layers. We provied you with this example about a structure of a model.
     """
-    def __init__(self, size_list=None, act_func=None, lambda_list=None):
-        self.size_list = size_list
+    def __init__(self, size_list=None, act_func=None, lambda_list=None, training=True):
+        self.act_func = act_func
+        self.training = training
         self.act_func = act_func
 
         if size_list is not None and act_func is not None:
@@ -76,12 +77,17 @@ class Model_MLP(Layer):
         with open(save_path, 'wb') as f:
             pickle.dump(param_list, f)
         
+    def train(self):
+        self.training = True
+    
+    def eval(self):
+        self.training = False
 
 class Model_CNN(Layer):
     """
     A model with conv2D layers. Implement it using the operators you have written in op.py
     """
-    def __init__(self, input_shape=(1, 28, 28), num_classes=10):
+    def __init__(self, input_shape=(1, 28, 28), num_classes=10, training=True, bn=False):
         """
         初始化一个简单的CNN模型，结构为：
         Conv1 → ReLU → MaxPool → Conv2 → ReLU → MaxPool → Flatten → Linear → Softmax
@@ -94,6 +100,8 @@ class Model_CNN(Layer):
         C, H, W = input_shape
         self.input_shape = input_shape
         self.num_classes = num_classes
+        self.training = training
+        self.bn = bn
 
         # 卷积层1，卷积核大小5x5，输出通道数16，步长1，填充0。->[16, 24, 24]
         self.conv1 = conv2D(
@@ -106,6 +114,9 @@ class Model_CNN(Layer):
             weight_decay=False,
             weight_decay_lambda=1e-8
         )
+        # 增加：归一化层1
+        if self.bn:
+            self.norm1 = BatchNorm2D(num_features=16, training=self.training)
         # ReLU激活
         self.relu1 = ReLU()
         # 最大池化层1，池化核大小2x2，步长2，填充0。->[16, 12, 12]
@@ -122,6 +133,9 @@ class Model_CNN(Layer):
             weight_decay=False,
             weight_decay_lambda=1e-8
         )
+        # # 增加：归一化层2
+        if self.bn:
+            self.norm2 = BatchNorm2D(num_features=32, training=self.training)
         # ReLU激活
         self.relu2 = ReLU()
         # 最大池化层2，池化核大小2x2，步长2，填充0。->[32, 4, 4]
@@ -136,9 +150,12 @@ class Model_CNN(Layer):
             weight_decay_lambda=1e-8
         )
         # 存储所有层
-        self.layers = [self.conv1, self.relu1, self.maxpool1, self.conv2, self.relu2, self.maxpool2, self.fc1]
-        # 存储所有可训练层（用于梯度更新）
-        self.trainable_layers = [self.conv1, self.conv2, self.fc1]
+        if self.bn:
+            self.layers = [self.conv1, self.norm1, self.relu1, self.maxpool1, self.conv2, self.norm2, self.relu2, self.maxpool2, self.fc1]
+        else:
+            self.layers = [self.conv1, self.relu1, self.maxpool1, self.conv2, self.relu2, self.maxpool2, self.fc1]
+        # # 存储所有可训练层（用于梯度更新）
+        # self.trainable_layers = [self.conv1, self.conv2, self.fc1]
 
 
     def __call__(self, X):
@@ -150,9 +167,13 @@ class Model_CNN(Layer):
         X = X.reshape(X.shape[0], *self.input_shape)
 
         X = self.conv1(X)
+        if self.bn:
+            X = self.norm1(X)
         X = self.relu1(X)
         X = self.maxpool1(X)
         X = self.conv2(X)
+        if self.bn:
+            X = self.norm2(X)
         X = self.relu2(X)
         X = self.maxpool2(X)
 
@@ -206,6 +227,17 @@ class Model_CNN(Layer):
         self.fc1.weight_decay = param_list['fc1_params']['weight_decay']
         self.fc1.weight_decay_lambda = param_list['fc1_params']['lambda']
 
+        if self.bn:
+            self.norm1.params['gamma'] = param_list['norm1_params']['gamma']
+            self.norm1.params['beta'] = param_list['norm1_params']['beta']
+            self.norm1.running_mean = param_list['norm1_params']['running_mean']
+            self.norm1.running_var = param_list['norm1_params']['running_var']
+
+            self.norm2.params['gamma'] = param_list['norm2_params']['gamma']
+            self.norm2.params['beta'] = param_list['norm2_params']['beta']
+            self.norm2.running_mean = param_list['norm2_params']['running_mean']
+            self.norm2.running_var = param_list['norm2_params']['running_var']
+
         
     def save_model(self, save_path):
         model_info = {
@@ -231,5 +263,255 @@ class Model_CNN(Layer):
             }
         }   
 
+        if self.bn:
+            norm1_params = {
+                'gamma':self.norm1.params['gamma'],
+                'beta':self.norm1.params['beta'],
+                'running_mean':self.norm1.running_mean,
+                'running_var':self.norm1.running_var
+            }
+            norm2_params = {
+                'gamma':self.norm2.params['gamma'],
+                'beta':self.norm2.params['beta'],
+                'running_mean':self.norm2.running_mean,
+                'running_var':self.norm2.running_var
+            }
+            model_info['norm1_params'] = norm1_params
+            model_info['norm2_params'] = norm2_params
+
+
         with open(save_path, 'wb') as f:
             pickle.dump(model_info, f)
+
+    def train(self):
+        self.training = True
+
+    def eval(self):
+        self.training = False
+            
+
+class Model_CNN_Deeper(Layer):
+    """
+    A deeper model with conv2D layers. Implement it using the operators you have written in op.py
+    """
+    def __init__(self, input_shape=(1, 28, 28), num_classes=10, training=True, bn=False):
+        """
+        初始化一个更深的CNN模型，结构为：
+        Conv1 → ReLU → MaxPool → Conv2 → ReLU → MaxPool → Conv3 → ReLU → MaxPool → Flatten → Linear → Softmax
+
+        参数:
+            input_shape: 输入张量形状 (C, H, W)，默认单通道28x28（MNIST）
+            num_classes: 输出类别数
+        """
+        super().__init__()
+        C, H, W = input_shape
+        self.input_shape = input_shape
+        self.num_classes = num_classes
+        self.training = training
+        self.bn = bn
+
+        # 卷积层1，卷积核大小5x5，输出通道数16，步长1，填充0。->[16, 24, 24]
+        self.conv1 = conv2D(
+            in_channels=C,
+            out_channels=16,
+            kernel_size=5,
+            stride=1,
+            padding=0,
+            initialize_method=np.random.normal,
+            weight_decay=False,
+            weight_decay_lambda=1e-4
+        )
+        # 增加：归一化层1
+        if self.bn:
+            self.norm1 = BatchNorm2D(num_features=16, training=self.training)
+        # ReLU激活
+        self.relu1 = ReLU()
+        # 最大池化层1，池化核大小2x2，步长2，填充0。->[16, 12, 12]
+        self.maxpool1 = MaxPool2D(kernel_size=2, stride=2, padding=0)
+
+        # 卷积层2，卷积核大小3x3，输出通道数32，步长1，填充0。->[32, 10, 10]
+        self.conv2 = conv2D(
+            in_channels=16,
+            out_channels=32,
+            kernel_size=3,
+            stride=1,
+            padding=0,
+            initialize_method=np.random.normal,
+            weight_decay=False,
+            weight_decay_lambda=1e-4
+        )
+        # # 增加：归一化层2
+        if self.bn:
+            self.norm2 = BatchNorm2D(num_features=32, training=self.training)
+        # ReLU激活
+        self.relu2 = ReLU()
+        # 最大池化层2，池化核大小2x2，步长2，填充0。->[32, 5, 5]
+        self.maxpool2 = MaxPool2D(kernel_size=2, stride=2, padding=0)
+
+        # 卷积层3，卷积核大小3x3，输出通道数64，步长1，填充0。->[64, 3, 3]
+        self.conv3 = conv2D(
+            in_channels=32,
+            out_channels=64,
+            kernel_size=3,
+            stride=1,
+            padding=0,
+            initialize_method=np.random.normal,
+            weight_decay=False,
+            weight_decay_lambda=1e-4
+        )
+        # # 增加：归一化层3
+        if self.bn:
+            self.norm3 = BatchNorm2D(num_features=64, training=self.training)
+        # ReLU激活
+        self.relu3 = ReLU()
+
+        # 全连接层，输入维度64x3x3，输出维度10。
+        self.fc1 = Linear(
+            in_dim=64 * 3 * 3,
+            out_dim=10,
+            initialize_method=np.random.normal,
+            weight_decay=False,
+            weight_decay_lambda=1e-8
+        )
+        # 存储所有层
+        if self.bn:
+            self.layers = [self.conv1, self.norm1, self.relu1, self.maxpool1, self.conv2, self.norm2, self.relu2, self.maxpool2, self.conv3, self.norm3, self.relu3, self.fc1]
+        else:
+            self.layers = [self.conv1, self.relu1, self.maxpool1, self.conv2, self.relu2, self.maxpool2, self.conv3, self.relu3, self.fc1]
+        # # 存储所有可训练层（用于梯度更新）
+        # self.trainable_layers = [self.conv1, self.conv2, self.fc1]
+
+
+    def __call__(self, X):
+        return self.forward(X)
+
+    def forward(self, X):
+
+        # 调整输入形状 [batch, 28*28] -> [batch, 1, 28, 28]
+        X = X.reshape(X.shape[0], *self.input_shape)
+
+        X = self.conv1(X)
+        if self.bn:
+            X = self.norm1(X)
+        X = self.relu1(X)
+        X = self.maxpool1(X)
+        X = self.conv2(X)
+        if self.bn:
+            X = self.norm2(X)
+        X = self.relu2(X)
+        X = self.maxpool2(X)
+        X = self.conv3(X)
+        if self.bn:
+            X = self.norm3(X)
+        X = self.relu3(X)
+
+        # 展平输入全连接层
+        X = X.reshape(X.shape[0], -1)
+        X = self.fc1(X)
+
+        # 输出类别概率
+        # X = softmax(X)
+        return X
+
+    def backward(self, loss_grad):
+        grads = loss_grad
+        for i, layer in enumerate(reversed(self.layers)):
+            grads = layer.backward(grads)
+            if layer == self.fc1:
+                grads = grads.reshape(grads.shape[0], 64, 3, 3)
+            # if hasattr(layer, 'grads'):
+            #     print(f"Layer {i} ({layer.__class__.__name__}) grad norm: {np.linalg.norm(grads)}")
+        return grads
+    
+    def load_model(self, param_list):
+        with open(param_list, 'rb') as f:
+            param_list = pickle.load(f)
+
+        # 加载参数
+        self.conv1.params['W'] = param_list['conv1_params']['W']
+        self.conv1.params['b'] = param_list['conv1_params']['b']
+        self.conv1.weight_decay = param_list['conv1_params']['weight_decay']
+        self.conv1.weight_decay_lambda = param_list['conv1_params']['lambda']
+
+        self.conv2.params['W'] = param_list['conv2_params']['W']
+        self.conv2.params['b'] = param_list['conv2_params']['b']
+        self.conv2.weight_decay = param_list['conv2_params']['weight_decay']
+        self.conv2.weight_decay_lambda = param_list['conv2_params']['lambda']
+
+        self.conv3.params['W'] = param_list['conv3_params']['W']
+        self.conv3.params['b'] = param_list['conv3_params']['b']
+        self.conv3.weight_decay = param_list['conv3_params']['weight_decay']
+        self.conv3.weight_decay_lambda = param_list['conv3_params']['lambda']
+
+        self.fc1.params['W'] = param_list['fc1_params']['W']
+        self.fc1.params['b'] = param_list['fc1_params']['b']
+        self.fc1.weight_decay = param_list['fc1_params']['weight_decay']
+        self.fc1.weight_decay_lambda = param_list['fc1_params']['lambda']
+
+        if self.bn:
+            self.norm1.params['gamma'] = param_list['norm1_params']['gamma']
+            self.norm1.params['beta'] = param_list['norm1_params']['beta']
+            self.norm1.running_mean = param_list['norm1_params']['running_mean']
+            self.norm1.running_var = param_list['norm1_params']['running_var']
+
+            self.norm2.params['gamma'] = param_list['norm2_params']['gamma']
+            self.norm2.params['beta'] = param_list['norm2_params']['beta']
+            self.norm2.running_mean = param_list['norm2_params']['running_mean']
+            self.norm2.running_var = param_list['norm2_params']['running_var']
+
+        
+    def save_model(self, save_path):
+        model_info = {
+            'input_shape':self.input_shape,
+            'num_classes':self.num_classes,
+            'conv1_params':{
+                'W':self.conv1.params['W'],
+                'b':self.conv1.params['b'],
+                'weight_decay':self.conv1.weight_decay,
+                'lambda':self.conv1.weight_decay_lambda
+            },
+            'conv2_params':{
+                'W':self.conv2.params['W'],
+                'b':self.conv2.params['b'],
+                'weight_decay':self.conv2.weight_decay,
+                'lambda':self.conv2.weight_decay_lambda
+            },
+            'conv3_params':{ 
+                'W':self.conv3.params['W'],
+                'b':self.conv3.params['b'],
+                'weight_decay':self.conv3.weight_decay,
+                'lambda':self.conv3.weight_decay_lambda
+            },
+            'fc1_params':{
+                'W':self.fc1.params['W'],
+                'b':self.fc1.params['b'],
+                'weight_decay':self.fc1.weight_decay,
+                'lambda':self.fc1.weight_decay_lambda
+            }
+        }   
+
+        if self.bn:
+            norm1_params = {
+                'gamma':self.norm1.params['gamma'],
+                'beta':self.norm1.params['beta'],
+                'running_mean':self.norm1.running_mean,
+                'running_var':self.norm1.running_var
+            }
+            norm2_params = {
+                'gamma':self.norm2.params['gamma'],
+                'beta':self.norm2.params['beta'],
+                'running_mean':self.norm2.running_mean,
+                'running_var':self.norm2.running_var
+            }
+            model_info['norm1_params'] = norm1_params
+            model_info['norm2_params'] = norm2_params
+
+
+        with open(save_path, 'wb') as f:
+            pickle.dump(model_info, f)
+
+    def train(self):
+        self.training = True
+
+    def eval(self):
+        self.training = False

@@ -22,3 +22,6 @@ build/
 # 忽略所有 .png 图像文件
 *.png
 
+# 忽略 .tex 文件
+*.tex
+

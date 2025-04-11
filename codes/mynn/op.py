@@ -81,7 +81,7 @@ class conv2D(Layer):
         self.padding = padding
         self.params = {}
 
-        # Xavier初始化
+        # # Xavier初始化
         fan_in = in_channels * kernel_size * kernel_size
         fan_out = out_channels * kernel_size * kernel_size
         scale = np.sqrt(2.0 / (fan_in + fan_out))  # ReLU的修正因子
@@ -216,16 +216,7 @@ class conv2D(Layer):
                 grad_input[:, :, h_start:h_end, w_start:w_end] += grad_contribution
 
         return grad_input
-
-    # def backward(self, grads):
-    #     # 仅保留卷积核梯度计算，跳过输入梯度计算（临时测试）
-    #     self.grads['W'] = np.zeros_like(self.params['W'])
-    #     self.grads['b'] = np.sum(grads, axis=(0, 2, 3))
-    #     grad_input = np.zeros_like(self.input)  # 返回全零梯度
-    #     return grad_input
-
     
-
     def clear_grad(self):
         self.grads = {'W' : None, 'b' : None}
         
@@ -256,7 +247,7 @@ class MultiCrossEntropyLoss(Layer):
     """
     A multi-cross-entropy loss layer, with Softmax layer in it, which could be cancelled by method cancel_softmax
     """
-    def __init__(self, model = None, max_classes = 10) -> None:
+    def __init__(self, model = None, max_classes = 10, smooth = False, smoothing_factor = 0.1) -> None:
         super().__init__()
         self.model = model
         self.has_softmax = True
@@ -264,6 +255,8 @@ class MultiCrossEntropyLoss(Layer):
         self.grads = None
         self.input = None
         self.labels = None
+        self.smooth = smooth
+        self.smoothing_factor = smoothing_factor
 
     def __call__(self, predicts, labels):
         return self.forward(predicts, labels)
@@ -283,6 +276,10 @@ class MultiCrossEntropyLoss(Layer):
         # 将 labels 转化为 one-hot 编码
         one_hot_labels = np.zeros_like(predicts)
         one_hot_labels[np.arange(labels.shape[0]), labels] = 1
+
+        # 如果需要标签平滑，则对 one_hot_labels 进行处理
+        if self.smooth:
+            one_hot_labels = (1 - self.smoothing_factor) * one_hot_labels + self.smoothing_factor / self.max_classes
         
         # 计算交叉熵
         loss = -np.sum(one_hot_labels * np.log(predicts + 1e-10), axis=1)
@@ -416,30 +413,102 @@ class MaxPool2D(Layer):
                 # 将梯度累加到对应位置
                 batch_indices = np.arange(batch_size)[:, None]  # [batch, 1]
                 channel_indices = np.arange(C)[None, :]        # [1, C]
-                grad_input[batch_indices, channel_indices, self.max_idx[:, :, i, j, 0], self.max_idx[:, :, i, j, 1]] += grads[:, :, i, j]      
+                grad_input[batch_indices, channel_indices, max_pos_h, max_pos_w] += grads[:, :, i, j]      
 
 
         return grad_input
 
-def clear_grad(self):
-    pass
+    def clear_grad(self):
+        pass
+
+class BatchNorm2D(Layer):
+    """
+    A batch normalization layer.
+    """
+    def __init__(self, num_features, momentum=0.1, training=True) -> None:
+        super().__init__()
+
+        self.num_features = num_features
+        self.input = None
+        self.grads = {'gamma': None, 'beta': None}
+        self.params = {}
+        self.params['gamma'] = np.ones(num_features)
+        self.params['beta'] = np.zeros(num_features)
+        self.running_mean = np.zeros(num_features)
+        self.running_var = np.ones(num_features)   # 初始方差为 1，避免除 0
+        self.eps = 1e-5
+        self.momentum = momentum    # 用于更新 running_mean 和 running_var
+
+        self.training = training
+        self.optimizable = True
+        self.weight_decay = False
+
+    def __call__(self, X):
+        return self.forward(X)
+    
+    def forward(self, X):
+        """
+        input X: [batch, C, H, W]
+        """
+
+        if self.training:
+            self.input = X
+            batch_size, C, H, W = X.shape
+
+            # 计算均值和方差
+            mean = np.mean(X, axis=(0, 2, 3), keepdims=True)      # [1, C, 1, 1]
+            var = np.var(X, axis=(0, 2, 3), keepdims=True)        # [1, C, 1, 1]
+
+            # 计算移动均值和方差
+            self.running_mean = self.momentum * self.running_mean + (1 - self.momentum) * mean
+            self.running_var = self.momentum * self.running_var + (1 - self.momentum) * var
+
+            # 计算标准化输入
+            X_norm = (X - mean) / np.sqrt(var + self.eps)
+
+            # 计算输出
+            output = self.params['gamma'][None, :, None, None] * X_norm + self.params['beta'][None, :, None, None]
+
+            # 保存中间变量，用于反向传播
+            self.cache = (X, X_norm, mean, var)
+        else:
+            # 计算输出
+            X_norm = (X - self.running_mean) / np.sqrt(self.running_var + self.eps)
+            output = self.params['gamma'][None, :, None, None] * X_norm + self.params['beta'][None, :, None, None]
+
+        return output
+
+    def backward(self, grads):
+        """
+        grads : [batch_size, C, H, W]
+        """
+        X, X_norm, mean, var = self.cache
+        N, C, H, W = X.shape
+
+        # 计算梯度
+        dX_norm = grads * self.params['gamma'][None, :, None, None]
+
+        dvar = np.sum(dX_norm * (X - mean) * (-0.5) * (var + self.eps)**(-3/2), axis=(0, 2, 3), keepdims=True)  # [1, C, 1, 1]
+        dmean = np.sum(dX_norm * (-1) * (var + self.eps)**(-1/2), axis=(0, 2, 3), keepdims=True) + \
+                dvar * np.mean(-2 * (X - mean), axis=(0, 2, 3), keepdims=True)  # [1, C, 1, 1]
+        dX = dX_norm / np.sqrt(var + self.eps) + dmean / (N * H * W) + dvar * (2 * (X - mean) / (N * H * W))
+
+        dgamma = np.sum(grads * X_norm, axis=(0, 2, 3))
+        dbeta = np.sum(grads, axis=(0, 2, 3))
+
+        # 保存梯度
+        self.grads['gamma'] = dgamma
+        self.grads['beta'] = dbeta
+
+        return dX
+
+    def clear_grad(self):
+        self.grads = {'gamma': None, 'beta': None}
 
 
-# class BatchNorm1D(Layer):
-#     """
-#     A batch normalization layer.
-#     """
-#     def __init__(self, input_dim, initialize_method=np.random.normal, weight_decay=False, weight_decay_lambda=1e-8) -> None:
-#         super().__init__()
-#         self.input_dim = input_dim
-#         self.initialize_method = initialize_method
-#         self.weight_decay = weight_decay
-#         self.weight_decay_lambda = weight_decay_lambda
-#         self.params = {}
-#         self.params['gamma'] = np.ones(input_dim)
-#         self.params['beta'] = np.zeros(input_dim)
-#         self.params['running_mean'] = np.zeros(input_dim)
-#         self.grads = {}
+
+
+
 
 
 # 测试代码
